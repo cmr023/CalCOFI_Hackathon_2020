@@ -1,0 +1,83 @@
+---
+title: "CalCofi Draft"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(zoo)
+library(gridExtra)
+library(plotly)
+library(leaflet)
+library(readxl)
+library(leafpop)
+library(rgdal)
+
+#reading excel sheets multiple
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets(filename)
+    x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+    if(!tibble) x <- lapply(x, as.data.frame)
+    names(x) <- sheets
+    x
+}
+
+#loading dataset from xlsx dataset
+df_parts <- read_excel_allsheets("final_output.xlsx")
+
+#combining sheets into a single dataframe
+df <- rbindlist(df_parts, fill = TRUE)
+
+#formatting date
+df$Date <- as.Date(df$Date, format = "%m/%d/%y")
+
+#changing -13 data to NA data (see metadata)
+df <- na_if(df, -13)
+
+#creating df for each region
+NE_line <- filter(df, Quadrant == "NE")
+SE_line <- filter(df, Quadrant == "SE")
+Alley_line <- filter(df, Quadrant == "Alley")
+Offshore_line <- filter(df, Quadrant == "Offshore")
+
+#creating dataset for summed abundance
+df_num <- df[,8:length(NE_line)]
+df_num$Date <- df$Date
+Sum_line <- aggregate(. ~Date, data=df_num, sum, na.rm=TRUE)
+
+```
+
+Spatial mapping
+```{r}
+station_pts <- read.csv("CalCOFIStationOrder.csv")
+
+#chull for entire region - not utilized but could be
+hpts <- chull(station_pts[, c("Lat_dec", "Lon_dec")])
+hpts <- c(hpts, hpts[1]) 
+hull <- station_pts[hpts, ]
+
+#four region data
+snip <- "map.geojson"
+res <- readOGR(dsn = snip, layer = "map")
+
+#leaflet graph for app.
+n <- leaflet(data = station_pts) %>% addTiles() %>%
+  addCircleMarkers(lng = ~Lon_dec, 
+                   lat = ~Lat_dec,
+                   radius = .5) %>%
+addPolygons(data = res,
+            label = c("Offshore",
+                      "Southeast",
+                      "Alley",
+                      "Northeast"),
+            highlightOptions = highlightOptions
+            (color = "white", 
+              weight = 2,
+              bringToFront = TRUE))
+n
+
+```
+
